@@ -2,9 +2,14 @@ import {
     call,
     put,
     takeEvery,
-    takeLatest,
-    select
+    takeLatest
 } from "redux-saga/effects";
+
+import {
+    addPatientToIndexedDB,
+    getPatientsFromIndexedDB,
+    removePatientFromIndexedDB
+} from "../utils/indexedDB";
 
 import {
     FETCH_PATIENTS,
@@ -14,17 +19,22 @@ import {
     FETCH_PATIENT_DETAILS,
     SET_PATIENT_DETAILS,
     NETWORK_ONLINE,
-    ADD_PATIENT,
+    ADD_NEW_PATIENT,
     REMOVE_QUEUED_PATIENT,
-    SET_STATUS
+    SET_STATUS,
+    MARK_BATCH_FETCHED,
+    LOAD_OFFLINE_QUEUE
 } from "./actions";
 
 // Creating our API function for fetch, submit, JSONPlaceholder as the mock API
-function fetchPatientsAPI() {
+function fetchPatientsAPI(skip) {
     return fetch(
-        "https://jsonplaceholder.typicode.com/users?_limit=10"
+        `https://dummyjson.com/users?limit=10&skip=${skip}`
     ).then((res) => res.json());
 }
+
+// submitPatientAPI(patient) -> It can accept your POST request and return a response that looks like a successfully created resource,
+// but the data isn't actually persisted in a database.
 
 function submitPatientAPI(patient) {
     return fetch(
@@ -43,7 +53,7 @@ function fetchPatientDetailsAPI(id) {
     return new Promise((resolve) => {
         setTimeout(() => {
             fetch(
-                `https://jsonplaceholder.typicode.com/users/${id}`
+                `https://dummyjson.com/users/${id}`
             )
                 .then((res) => res.json())
                 .then((data) => resolve(data));
@@ -52,21 +62,24 @@ function fetchPatientDetailsAPI(id) {
 }
 
 // Worker Saga for fetching patients
-function* fetchPatientsSaga() {
+function* fetchPatientsSaga(action) {
     try {
-
-        yield put({
-            type: SET_STATUS,
-            payload: "Fetching patients..."
-        });
-
-        const data = yield call(fetchPatientsAPI);
+        const data = yield call(
+            fetchPatientsAPI,
+            action.payload
+        );
 
         console.log("Patients fetched:", data);
 
         yield put({
             type: SET_PATIENTS,
-            payload: data
+            payload: data.users
+            // We only want the actual users for our Redux patients array, because this mock api gets users,total, skip etc
+        });
+
+        yield put({
+            type: MARK_BATCH_FETCHED,
+            payload: action.payload
         });
 
         yield put({
@@ -83,11 +96,12 @@ function* fetchPatientsSaga() {
             type: SET_STATUS,
             payload: "Failed to fetch patients"
         });
-    } 
+    }
 }
 
 // Worker Saga for submitting a patient
 function* submitPatientSaga(action) {
+
     if (navigator.onLine) {
         try {
             const data = yield call(
@@ -98,102 +112,223 @@ function* submitPatientSaga(action) {
             console.log("Patient added:", data);
 
             yield put({
-                type: ADD_PATIENT,
-                payload: data
+                type: ADD_NEW_PATIENT,
+                payload: {
+                    ...action.payload,
+                    id: data.id
+                }
             });
 
             yield put({
                 type: SET_STATUS,
                 payload: "Patient added successfully"
             });
+
         } catch (error) {
-            console.error("Failed to add patient:", error);
+
+            console.error(
+                "Failed to add patient:",
+                error
+            );
 
             yield put({
                 type: SET_STATUS,
                 payload: "Failed to add patient"
             });
         }
+
     } else {
+
+        try {
+
+            const id = yield call(
+                addPatientToIndexedDB,
+                action.payload
+            );
+
+            const queuedPatient = {
+                ...action.payload,
+                id: id
+            };
+
+            console.log(
+                "Patient added to IndexedDB:",
+                queuedPatient
+            );
+
+            yield put({
+                type: QUEUE_PATIENT_FORM,
+                payload: queuedPatient
+            });
+
+            yield put({
+                type: SET_STATUS,
+                payload: "Patient added to offline queue"
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Failed to save patient to IndexedDB:",
+                error
+            );
+
+            yield put({
+                type: SET_STATUS,
+                payload: "Failed to save patient offline"
+            });
+        }
+    }
+}
+
+// Worker Saga for loading offline patients from IndexedDB
+function* loadOfflineQueueSaga() {
+    try {
+
+        // This reads the persistent browser storage.
+        const patients = yield call(
+            getPatientsFromIndexedDB
+        );
+
         console.log(
-            "Patient added to offline queue:",
-            action.payload
+            "Offline patients loaded from IndexedDB:",
+            patients
+        );
+
+        // puts each stored patient back into Redux.
+        for (const patient of patients) {
+
+            yield put({
+                type: QUEUE_PATIENT_FORM,
+                payload: patient
+            });
+        }
+
+        if (patients.length > 0) {
+            yield put({
+                type: SET_STATUS,
+                payload: "Offline queue restored"
+            });
+        }
+
+    } catch (error) {
+
+        console.error(
+            "Failed to load offline queue:",
+            error
         );
 
         yield put({
-            type: QUEUE_PATIENT_FORM,
-            payload: action.payload
-        });
-
-        yield put({
             type: SET_STATUS,
-            payload: "Patient added to offline queue"
+            payload: "Failed to restore offline queue"
         });
     }
 }
 
 // Worker Saga for processing offline queue
 function* processOfflineQueueSaga() {
-    const queue = yield select(
-        (state) => state.offlineQueue
-    );
 
-    console.log("Offline queue:", queue);
+    try {
 
-    if (queue.length === 0) {
-        console.log("No patients in offline queue");
+        const queue = yield call(
+            getPatientsFromIndexedDB
+        );
+
+        console.log(
+            "Offline queue from IndexedDB:",
+            queue
+        );
+
+        if (queue.length === 0) {
+
+            console.log(
+                "No patients in offline queue"
+            );
+
+            yield put({
+                type: SET_STATUS,
+                payload: "No patients in offline queue"
+            });
+
+            return;
+        }
+
+        console.log(
+            "Processing offline queue..."
+        );
 
         yield put({
             type: SET_STATUS,
-            payload: "No patients in offline queue"
+            payload: "Online: Processing offline queue"
         });
 
-        return;
-    }
+        for (const patient of queue) {
 
-    console.log("Processing offline queue...");
+            try {
 
-    yield put({
-        type: SET_STATUS,
-        payload: "Online: Processing offline queue"
-    });
+                const data = yield call(
+                    submitPatientAPI,
+                    patient
+                );
 
-    for (const patient of queue) {
-        try {
-            const data = yield call(
-                submitPatientAPI,
-                patient
-            );
+                yield put({
+                    type: ADD_NEW_PATIENT,
+                    payload: {
+                        ...patient,
+                        id: data.id
+                    }
+                });
 
-            yield put({
-                type: ADD_PATIENT,
-                payload: data
-            });
+                console.log(
+                    "Offline patient submitted:",
+                    data
+                );
 
-            console.log(
-                "Offline patient submitted:",
-                data
-            );
+                yield call(
+                    removePatientFromIndexedDB,
+                    patient.id
+                );
 
-            yield put({
-                type: REMOVE_QUEUED_PATIENT
-            });
+                console.log(
+                    "Patient removed from IndexedDB:",
+                    patient.id
+                );
 
-            yield put({
-                type: SET_STATUS,
-                payload: "Offline patient submitted successfully"
-            });
-        } catch (error) {
-            console.error(
-                "Failed to submit offline patient:",
-                error
-            );
+                yield put({
+                    type: REMOVE_QUEUED_PATIENT,
+                    payload: patient.id
+                });
 
-            yield put({
-                type: SET_STATUS,
-                payload: "Failed to submit offline patient"
-            });
+                yield put({
+                    type: SET_STATUS,
+                    payload: "Offline patient submitted successfully"
+                });
+
+            } catch (error) {
+
+                console.error(
+                    "Failed to submit offline patient:",
+                    error
+                );
+
+                yield put({
+                    type: SET_STATUS,
+                    payload: "Failed to submit offline patient"
+                });
+            }
         }
+
+    } catch (error) {
+
+        console.error(
+            "Failed to process offline queue:",
+            error
+        );
+
+        yield put({
+            type: SET_STATUS,
+            payload: "Failed to process offline queue"
+        });
     }
 }
 
@@ -236,7 +371,7 @@ function* fetchPatientDetailsSaga(action) {
             type: SET_STATUS,
             payload: "Failed to fetch patient details"
         });
-    } 
+    }
 }
 
 // rootSaga contains the watcher Sagas.
@@ -244,6 +379,7 @@ function* fetchPatientDetailsSaga(action) {
 // the corresponding Worker Saga runs.
 
 export default function* rootSaga() {
+
     yield takeEvery(
         FETCH_PATIENTS,
         fetchPatientsSaga
@@ -257,6 +393,11 @@ export default function* rootSaga() {
     yield takeEvery(
         NETWORK_ONLINE,
         processOfflineQueueSaga
+    );
+
+    yield takeEvery(
+        LOAD_OFFLINE_QUEUE,
+        loadOfflineQueueSaga
     );
 
     yield takeLatest(

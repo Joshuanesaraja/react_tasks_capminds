@@ -9,11 +9,15 @@ export const SET_PATIENT_DETAILS = "SET_PATIENT_DETAILS";
 
 export const NETWORK_ONLINE = "NETWORK_ONLINE";
 export const NETWORK_OFFLINE = "NETWORK_OFFLINE";
+export const LOAD_OFFLINE_QUEUE = "LOAD_OFFLINE_QUEUE";
 
 export const REMOVE_QUEUED_PATIENT = "REMOVE_QUEUED_PATIENT";
 
-export const ADD_PATIENT = "ADD_PATIENT";
+
+export const ADD_NEW_PATIENT = "ADD_NEW_PATIENT";
 
 export const SET_STATUS = "SET_STATUS";
+
+export const MARK_BATCH_FETCHED = "MARK_BATCH_FETCHED";
 
 // These are simply names for the events our application can trigger.

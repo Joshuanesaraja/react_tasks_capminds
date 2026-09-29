@@ -1,12 +1,13 @@
 import {
     SET_PATIENTS,
-    ADD_PATIENT,
     QUEUE_PATIENT_FORM,
     SET_PATIENT_DETAILS,
     REMOVE_QUEUED_PATIENT,
     SET_STATUS,
     NETWORK_ONLINE,
-    NETWORK_OFFLINE
+    NETWORK_OFFLINE,
+    MARK_BATCH_FETCHED,
+    ADD_NEW_PATIENT
 } from "./actions";
 
 const initialState = {
@@ -22,7 +23,11 @@ const initialState = {
 
     networkStatus: navigator.onLine,
 
-    status: "Ready"
+    status: "Ready",
+
+    fetchedBatches: [],
+
+    newlyAddedPatients: []
 };
 
 export default function reducer(state = initialState, action) {
@@ -30,7 +35,10 @@ export default function reducer(state = initialState, action) {
         case SET_PATIENTS:
             return {
                 ...state,
-                patients: action.payload
+                patients: [
+                    ...state.patients,
+                    ...action.payload
+                ]
             };
 
         case QUEUE_PATIENT_FORM:
@@ -45,20 +53,13 @@ export default function reducer(state = initialState, action) {
                 patientDetails: action.payload
             };
 
+        // we want to remove the exact patient that was successfully submitted.
         case REMOVE_QUEUED_PATIENT:
             return {
                 ...state,
-                offlineQueue: state.offlineQueue.slice(1)
-                // slice(1) -> We remove the first item because the Saga processes the queue one patient at a time.
-            };
-
-        case ADD_PATIENT:
-            return {
-                ...state,
-                patients: [
-                    ...state.patients,
-                    action.payload
-                ]
+                offlineQueue: state.offlineQueue.filter(
+                    (patient) => patient.id !== action.payload
+                )
             };
 
         case NETWORK_ONLINE:
@@ -77,6 +78,24 @@ export default function reducer(state = initialState, action) {
             return {
                 ...state,
                 status: action.payload
+            };
+
+        case MARK_BATCH_FETCHED:
+            return {
+                ...state,
+                fetchedBatches: [
+                    ...state.fetchedBatches,
+                    action.payload
+                ]
+            };
+
+        case ADD_NEW_PATIENT:
+            return {
+                ...state,
+                newlyAddedPatients: [
+                    ...state.newlyAddedPatients,
+                    action.payload
+                ]
             };
 
         default:

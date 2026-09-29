@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useDispatch } from "react-redux";
 
 import PatientList from "./components/PatientList";
@@ -8,7 +8,8 @@ import StatusMessage from "./components/StatusMessage";
 
 import {
     NETWORK_ONLINE,
-    NETWORK_OFFLINE
+    NETWORK_OFFLINE,
+    LOAD_OFFLINE_QUEUE
 } from "./redux/actions";
 
 import "./Task017.css";
@@ -16,9 +17,28 @@ import "./Task017.css";
 function Task017() {
     const dispatch = useDispatch();
 
+    const initialized = useRef(false);
+
     // useEffect() -> We only want to register the browser event listener when the component is mounted,
     // and remove it when the component is unmounted.
+
     useEffect(() => {
+
+        // preventing the initial startup logic from running twice.
+        if (!initialized.current) {
+
+            initialized.current = true;
+
+            dispatch({
+                type: LOAD_OFFLINE_QUEUE
+            });
+
+            if (navigator.onLine) {
+                dispatch({
+                    type: NETWORK_ONLINE
+                });
+            }
+        }
 
         // When the connection comes back:
         const handleOnline = () => {
@@ -49,6 +69,7 @@ function Task017() {
 
         // Cleanup
         return () => {
+
             window.removeEventListener(
                 "online",
                 handleOnline
@@ -59,6 +80,7 @@ function Task017() {
                 handleOffline
             );
         };
+
     }, [dispatch]);
 
     return (

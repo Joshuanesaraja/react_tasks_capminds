@@ -1,16 +1,34 @@
+````md
 # Task 017 - Redux Saga Healthcare Dashboard
 
 ## Overview
 
 A healthcare dashboard built using React, Redux, and Redux-Saga.
 
-### Features
+The application demonstrates:
 
 - Pagination performance optimization
 - Offline form submission queue
-- API request cancellation
+- IndexedDB persistence
+- AES encryption for offline data
+- API request cancellation using `takeLatest()`
 - Patient registration
 - Patient details management
+
+## Features
+
+- Fetch patients in batches of 10
+- Display 5 patients per page
+- Store fetched API patients in Redux
+- Fetch additional patient batches only when required
+- Submit patients when online
+- Queue patients when offline
+- Persist the offline queue using IndexedDB
+- Encrypt offline patient data using AES
+- Restore the offline queue after page refresh
+- Automatically process queued patients when the network returns
+- Display newly registered patients separately from the paginated patient list
+- Cancel previous patient-details requests using `takeLatest()`
 
 ## Technologies Used
 
@@ -20,11 +38,16 @@ A healthcare dashboard built using React, Redux, and Redux-Saga.
 - React-Redux
 - JavaScript
 - Fetch API
+- DummyJSON
 - JSONPlaceholder
+- IndexedDB
+- CryptoJS
 
 ## 1. Pagination Performance Optimization
 
-The application fetches 10 patients from the API and stores all 10 patients in Redux.
+The application fetches patients from the DummyJSON API in batches of 10.
+
+The fetched patients are stored in Redux.
 
 The UI displays 5 patients per page.
 
@@ -37,16 +60,54 @@ Fetch 10 Patients
  ↓
 Redux Store
  ↓
-Display 5 Patients
+Display 5 Patients Per Page
+```
+````
+
+For example:
+
+```text
+Page 1 → Patients 1–5
+Page 2 → Patients 6–10
 ```
 
-Page 1 displays patients 1–5.
+When the user reaches a page that requires another batch, the application fetches the next 10 patients from the API.
 
-Page 2 displays patients 6–10.
+The newly fetched patients are added to the existing Redux patient list.
 
-Changing pages does not make another API request because all patients are already stored in Redux.
+### Batch Pagination
 
-Newly registered patients are also added to the Redux patient list, and the pagination updates dynamically.
+```text
+Initial Fetch
+ ↓
+10 Patients
+ ↓
+Page 1 → 5 Patients
+Page 2 → 5 Patients
+ ↓
+Next Batch Required
+ ↓
+Fetch Next 10 Patients
+ ↓
+Redux
+ ↓
+Page 3 → 5 Patients
+Page 4 → 5 Patients
+```
+
+Already fetched batches are tracked using `fetchedBatches` so that the same API batch is not fetched repeatedly.
+
+### Newly Added Patients
+
+Patients created through the registration form are stored separately in:
+
+```text
+newlyAddedPatients
+```
+
+They are displayed in a separate **Newly Added Patients** section.
+
+This prevents newly registered patients from affecting the API patient pagination.
 
 ## 2. Offline Form Submission Queue
 
@@ -68,16 +129,18 @@ Saga
  ↓
 API
  ↓
-ADD_PATIENT
+ADD_NEW_PATIENT
  ↓
-Redux Store
+newlyAddedPatients
  ↓
 UI
 ```
 
 When the network is available, the patient is submitted directly to the API.
 
-After a successful response, the new patient is added to the Redux patient list.
+After a successful response, the patient is added to the `newlyAddedPatients` Redux state.
+
+The patient does not affect the paginated API patient list.
 
 ### Offline Submission
 
@@ -90,32 +153,160 @@ Saga
  ↓
 Network unavailable
  ↓
+AES Encryption
+ ↓
+IndexedDB
+ ↓
 QUEUE_PATIENT_FORM
  ↓
 Redux offlineQueue
 ```
 
-When the network is unavailable, the patient data is stored in the Redux offline queue.
+When the network is unavailable, the patient is encrypted using AES and stored in IndexedDB.
 
-### Processing the Queue
+The patient is also added to the Redux `offlineQueue` so that the UI can display the queued patient.
+
+## 3. IndexedDB Persistence
+
+IndexedDB is used to persist offline patient submissions.
+
+### Database Structure
 
 ```text
-Network Returns
+HealthcareDashboardDB
+        ↓
+offlinePatients
+```
+
+The IndexedDB object store uses:
+
+```text
+keyPath: "id"
+autoIncrement: true
+```
+
+Each stored record contains:
+
+```js
+{
+    id: 1,
+    data: "encrypted patient data"
+}
+```
+
+The patient information itself is stored inside the encrypted `data` field.
+
+### Why IndexedDB?
+
+Redux state is lost when the page is refreshed.
+
+IndexedDB allows the offline queue to survive page refreshes.
+
+```text
+Offline Patient
  ↓
-NETWORK_ONLINE
+IndexedDB
+ ↓
+Page Refresh
+ ↓
+Read IndexedDB
+ ↓
+Restore Redux Queue
+```
+
+## 4. AES Encryption
+
+Offline patient data is encrypted before being stored in IndexedDB.
+
+### Encryption Flow
+
+```text
+Patient Object
+ ↓
+encryptData()
+ ↓
+AES Encrypted String
+ ↓
+IndexedDB
+```
+
+The encrypted data is stored in IndexedDB instead of the original patient information.
+
+### Decryption Flow
+
+```text
+IndexedDB
+ ↓
+Encrypted Data
+ ↓
+decryptData()
+ ↓
+Patient Object
+ ↓
+Redux
+```
+
+This allows the application to restore the original patient data after a page refresh.
+
+CryptoJS is used for AES encryption and decryption.
+
+> Note: The AES key used in this training implementation is stored in the frontend application. This demonstrates AES encryption for the task but should not be considered production-grade secret-key management.
+
+## 5. Restoring the Offline Queue
+
+When the application starts, it dispatches:
+
+```text
+LOAD_OFFLINE_QUEUE
+```
+
+The Saga reads the encrypted records from IndexedDB.
+
+```text
+Application Start
+ ↓
+LOAD_OFFLINE_QUEUE
  ↓
 Saga
  ↓
-Read offlineQueue
+Read IndexedDB
  ↓
-Send queued patients to API
+Decrypt Patient Data
+ ↓
+QUEUE_PATIENT_FORM
+ ↓
+Redux offlineQueue
+```
+
+This allows queued patients to remain available after a page refresh.
+
+## 6. Processing the Offline Queue
+
+When the browser comes back online:
+
+```text
+NETWORK_ONLINE
+ ↓
+processOfflineQueueSaga
+ ↓
+Read IndexedDB
+ ↓
+Decrypt Patient Data
+ ↓
+Send Patient to API
+ ↓
+ADD_NEW_PATIENT
+ ↓
+Remove Patient from IndexedDB
  ↓
 REMOVE_QUEUED_PATIENT
 ```
 
-Successfully processed patients are removed from the offline queue.
+Patients are removed from IndexedDB only after the API submission succeeds.
 
-## 3. API Request Cancellation
+This prevents successfully queued data from being removed before it has been submitted.
+
+## 7. API Request Cancellation
 
 Patient details are loaded through Redux-Saga.
 
@@ -143,6 +334,8 @@ Request B Continues
 Patient B Details Displayed
 ```
 
+Manual `cancel()` is not used. The cancellation behavior is handled by `takeLatest()`.
+
 ## Redux-Saga Architecture
 
 ```text
@@ -156,7 +349,7 @@ Watcher Saga
  ↓
 Worker Saga
  ↓
-API / Queue Logic
+API / IndexedDB / Queue Logic
  ↓
 Reducer
  ↓
@@ -169,7 +362,7 @@ UI Re-render
 
 ### `call()`
 
-Used to call API functions.
+Used to call API and IndexedDB functions.
 
 ```js
 yield call(fetchPatientsAPI);
@@ -199,7 +392,7 @@ yield takeEvery(
 
 ### `takeLatest()`
 
-Keeps the latest Saga task for a matching action.
+Keeps only the latest Saga task for a matching action.
 
 ```js
 yield takeLatest(
@@ -208,64 +401,79 @@ yield takeLatest(
 );
 ```
 
-### `select()`
-
-Used to read data from the Redux Store.
-
-```js
-const queue = yield select(
-    (state) => state.offlineQueue
-);
-```
-
 ## Redux State
 
 ```js
 const initialState = {
   patients: [],
+  newlyAddedPatients: [],
   offlineQueue: [],
   patientDetails: null,
+  status: "Ready",
+  networkStatus: navigator.onLine,
+  fetchedBatches: [],
 };
 ```
 
 ### `patients`
 
-Stores the patients retrieved from the API and newly registered patients.
+Stores patients retrieved from the API for pagination.
+
+### `newlyAddedPatients`
+
+Stores patients created through the registration form.
+
+These patients are displayed separately from the paginated API patients.
 
 ### `offlineQueue`
 
-Stores patient registration data when the network is unavailable.
+Stores patients waiting to be submitted after the network becomes available.
 
 ### `patientDetails`
 
 Stores the details of the selected patient.
+
+### `status`
+
+Stores the current application status message displayed in the UI.
+
+### `networkStatus`
+
+Stores whether the browser is currently online or offline.
+
+### `fetchedBatches`
+
+Stores the API batch offsets that have already been fetched.
 
 ## Redux Actions
 
 ```text
 FETCH_PATIENTS
 SET_PATIENTS
-ADD_PATIENT
-
+ADD_NEW_PATIENT
 SUBMIT_PATIENT_FORM
 QUEUE_PATIENT_FORM
-
 FETCH_PATIENT_DETAILS
 SET_PATIENT_DETAILS
-
 NETWORK_ONLINE
+NETWORK_OFFLINE
 REMOVE_QUEUED_PATIENT
+SET_STATUS
+MARK_BATCH_FETCHED
+LOAD_OFFLINE_QUEUE
 ```
 
 ## Project Structure
 
 ```text
 task017_redux_saga/
+
 │
 ├── components/
 │   ├── PatientList.js
 │   ├── PatientForm.js
-│   └── PatientDetails.js
+│   ├── PatientDetails.js
+│   └── StatusMessage.js
 │
 ├── redux/
 │   ├── actions.js
@@ -273,32 +481,73 @@ task017_redux_saga/
 │   ├── saga.js
 │   └── store.js
 │
+├── utils/
+│   ├── indexedDB.js
+│   └── encryption.js
+│
 ├── Task017.js
 ├── Task017.css
 └── README.md
 ```
 
+## API Details
+
+### Patient List API
+
+DummyJSON is used to retrieve patient data.
+
+```text
+https://dummyjson.com/users
+```
+
+The API is requested using `limit` and `skip` parameters for pagination.
+
+Example:
+
+```text
+https://dummyjson.com/users?limit=10&skip=0
+```
+
+### Patient Details API
+
+Individual patient details are retrieved using the patient ID.
+
+```text
+https://dummyjson.com/users/{id}
+```
+
+### Patient Registration API
+
+JSONPlaceholder is used as a mock POST API for patient registration.
+
+```text
+https://jsonplaceholder.typicode.com/users
+```
+
+JSONPlaceholder is a mock API, so POST requests return a simulated response and do not permanently persist the newly created patient on the server.
+
 ## Testing
 
 ### Pagination
 
-- Fetch 10 patients
-- Verify all 10 patients are stored in Redux
+- Fetch patients
+- Verify 10 patients are fetched initially
 - Verify 5 patients are displayed per page
+- Navigate to Page 2
+- Verify the next batch is fetched when required
+- Verify already fetched batches are not fetched again
 - Navigate between pages
-- Verify no additional patient-list API request is made
-- Add a new patient
-- Verify the new patient is added to Redux
-- Verify pagination updates dynamically
+- Verify exactly 5 patients are displayed per page
+- Verify newly registered patients do not affect pagination
 
 ### Online Patient Registration
 
 - Submit a patient while online
 - Verify the API request
 - Verify the API response
-- Verify `ADD_PATIENT`
-- Verify the patient is added to Redux
-- Verify the patient appears in the patient list
+- Verify `ADD_NEW_PATIENT`
+- Verify the patient appears under **Newly Added Patients**
+- Verify the patient does not change the paginated patient list
 
 ### Offline Patient Registration
 
@@ -306,17 +555,24 @@ task017_redux_saga/
 - Submit a patient
 - Verify `QUEUE_PATIENT_FORM`
 - Verify the patient appears in `offlineQueue`
+- Verify the patient is stored in IndexedDB
+- Verify the IndexedDB record contains encrypted data
+- Refresh the page while offline
+- Verify the patient is restored from IndexedDB
+- Verify the encrypted data is successfully decrypted
 - Restore the network connection
 - Verify `NETWORK_ONLINE`
 - Verify the queued patient is sent to the API
-- Verify the processed patient is removed from the queue
+- Verify `ADD_NEW_PATIENT`
+- Verify the patient is removed from IndexedDB
+- Verify the patient is removed from the Redux offline queue
 
 ### Patient Details Cancellation
 
 - Select Patient 1
 - Start the details request
 - Quickly select Patient 2
-- Verify the latest request is handled
+- Verify `takeLatest()` handles the latest request
 - Verify Patient 2 details are displayed
 
 ## Application Flow
@@ -332,7 +588,7 @@ Watcher Saga
  ↓
 fetchPatientsSaga
  ↓
-API
+DummyJSON API
  ↓
 SET_PATIENTS
  ↓
@@ -343,7 +599,7 @@ Redux Store
 PatientList
 ```
 
-### Patient Registration
+### Online Patient Registration
 
 ```text
 PatientForm
@@ -351,17 +607,74 @@ PatientForm
 SUBMIT_PATIENT_FORM
  ↓
 Saga
- ├── Online
- │    ↓
- │   API
- │    ↓
- │   ADD_PATIENT
- │
- └── Offline
-      ↓
-     QUEUE_PATIENT_FORM
-      ↓
-     offlineQueue
+ ↓
+Online
+ ↓
+API
+ ↓
+ADD_NEW_PATIENT
+ ↓
+newlyAddedPatients
+ ↓
+UI
+```
+
+### Offline Patient Registration
+
+```text
+PatientForm
+ ↓
+SUBMIT_PATIENT_FORM
+ ↓
+Saga
+ ↓
+Offline
+ ↓
+AES Encryption
+ ↓
+IndexedDB
+ ↓
+QUEUE_PATIENT_FORM
+ ↓
+offlineQueue
+```
+
+### Offline Queue Restoration
+
+```text
+Application Start
+ ↓
+LOAD_OFFLINE_QUEUE
+ ↓
+Saga
+ ↓
+IndexedDB
+ ↓
+AES Decryption
+ ↓
+QUEUE_PATIENT_FORM
+ ↓
+offlineQueue
+```
+
+### Offline Queue Processing
+
+```text
+NETWORK_ONLINE
+ ↓
+processOfflineQueueSaga
+ ↓
+IndexedDB
+ ↓
+AES Decryption
+ ↓
+API
+ ↓
+ADD_NEW_PATIENT
+ ↓
+Remove from IndexedDB
+ ↓
+REMOVE_QUEUED_PATIENT
 ```
 
 ### Patient Details
@@ -375,7 +688,7 @@ takeLatest()
  ↓
 fetchPatientDetailsSaga
  ↓
-API
+DummyJSON API
  ↓
 SET_PATIENT_DETAILS
  ↓
