@@ -1,25 +1,25 @@
-// import Task013 from "./task013_state_prop/Task013";
-// import Task014 from "./task014_hooks/Task014";
-// import Task015 from "./task015_react_performance/Task015";
-// import Task016 from "./task016_redux/Task016";
-import Task017 from "./task017_redux_saga/Task017";
+// // import Task013 from "./task013_state_prop/Task013";
+// // import Task014 from "./task014_hooks/Task014";
+// // import Task015 from "./task015_react_performance/Task015";
+// // import Task016 from "./task016_redux/Task016";
+// import Task017 from "./task017_redux_saga/Task017";
 
-function App() {
-  return (
-    // <Task013 />
+// function App() {
+//   return (
+//     // <Task013 />
 
-    // <Task014 />
+//     // <Task014 />
 
-    // <Task015 />
+//     // <Task015 />
 
-    // <Task016 />
+//     // <Task016 />
 
-    <Task017 />
+//     <Task017 />
 
-  );
-}
+//   );
+// }
 
-export default App;
+// export default App;
 
 
 // styled components practice
@@ -105,3 +105,17 @@ export default App;
 // }
 
 // export default App;
+
+
+// Interceptor Practice
+// ********************
+
+import InterceptorDemo from "./axios_interceptors/InterceptorDemo";
+
+function App() {
+    return (
+        <InterceptorDemo />
+    );
+}
+
+export default App;
